@@ -1,4 +1,4 @@
-# Model enzyme temperature stability from sequence segment perspective
+# PatchET: Learning Enzyme Temperature Properties through Patch-based Neural Architectures
 
 ![Architecture](PatchET.png)
 
