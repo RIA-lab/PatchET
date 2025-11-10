@@ -1,0 +1,13 @@
+data_path: data/divide_clusters/stability
+
+training:
+  lr: 1e-4
+  num_epochs: 48
+  train_batch_size: 128
+  eval_batch_size: 128
+  weight_decay: 1e-4
+  dataloader_num_workers: 0
+  dataloader_pin_memory: True
+  save_total_limit: 2
+  fp16: True
+  max_grad_norm: 1.0

@@ -1,0 +1,11 @@
+name: 'patchet'
+pretrain_model: 'esm150'
+context_window: 1000
+target_window: 128
+patch_len: 50
+max_seq_len: 1000
+n_layers: 3
+d_model: 640
+patch_inter_kernel: 3
+n_patch_inter_heads: 4
+n_RD: 4
