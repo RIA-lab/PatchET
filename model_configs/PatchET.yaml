@@ -8,5 +8,4 @@ n_layers: 3
 d_model: 640
 patch_inter_kernel: 5
 n_patch_inter_heads: 4
-
 n_RD: 4
