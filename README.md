@@ -17,6 +17,8 @@ pip install -r requirements.txt
 - Download [ESM-2 weights](https://huggingface.co/facebook/esm2_t30_150M_UR50D).
 - Place the downloaded files in the `esm150/` folder.
 
+### 3. Download Model Weights
+- Download [PatchET model weights](https://doi.org/10.5281/zenodo.18408368).
 ---
 
 ## 🏋️ Training
