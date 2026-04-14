@@ -33,7 +33,6 @@ if __name__ == '__main__':
     run_config = load_config(args.run_config)
 
     task = run_config['data_path'].split('/')[-1]
-    ver = run_config['data_path'].split('/')[1]
     Dataset = load_dataset(task)
     metrics = load_metrics(task)
 
@@ -50,9 +49,9 @@ if __name__ == '__main__':
 
     model_name = args.model_config.split('/')[-1].split('.')[0][:-6] if model_config['name'].endswith('_range') else \
     args.model_config.split('/')[-1].split('.')[0]
-    run_name = f'{ver}_{task}_{model_name}'
-    output_dir = f'output/{ver}/{task}/{model_name}'
-    results_dir = f'results/{ver}/{task}/{model_name}'
+    run_name = f'{task}_{model_name}'
+    output_dir = f'output/{task}/{model_name}'
+    results_dir = f'results/{task}/{model_name}'
 
     # # transfer learning
     # if task == 'range' and 'segment' in model_config['name']:
@@ -116,7 +115,7 @@ if __name__ == '__main__':
         per_device_eval_batch_size=run_config['training']['eval_batch_size'],
         num_train_epochs=run_config['training']['num_epochs'],
         weight_decay=float(run_config['training']['weight_decay']),
-        evaluation_strategy="steps",  # <-- key change
+        eval_strategy="steps",
         eval_steps=eval_steps,
         dataloader_num_workers=run_config['training']['dataloader_num_workers'],
         dataloader_pin_memory=run_config['training']['dataloader_pin_memory'],

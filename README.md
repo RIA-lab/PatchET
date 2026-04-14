@@ -59,21 +59,21 @@ Train the model for each task using the appropriate config file:
 **Temperature optimum**
 ```bash
 python train.py \
-  --run_config run_configs/divide_clusters/opt.yaml \
+  --run_config run_configs/opt.yaml \
   --model_config model_configs/PatchET.yaml
 ```
 
 **Temperature stability**
 ```bash
 python train.py \
-  --run_config run_configs/divide_clusters/stability.yaml \
+  --run_config run_configs/stability.yaml \
   --model_config model_configs/PatchET.yaml
 ```
 
 **Temperature range**
 ```bash
 python train.py \
-  --run_config run_configs/divide_clusters/range.yaml \
+  --run_config run_configs/range.yaml \
   --model_config model_configs/PatchET_range.yaml
 ```
 
