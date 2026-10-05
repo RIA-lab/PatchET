@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+# model weights and training outputs are not tracked
+checkpoint/
+output/
+results/
+esm150/*
+!esm150/README.md

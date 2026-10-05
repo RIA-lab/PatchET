@@ -2,7 +2,7 @@ data_path: data/opt
 
 training:
   lr: 1e-4
-  num_epochs: 48
+  num_epochs: 32
   train_batch_size: 128
   eval_batch_size: 128
   weight_decay: 1e-4
@@ -11,3 +11,5 @@ training:
   save_total_limit: 2
   fp16: True
   max_grad_norm: 1.0
+  early_stopping_patience: 5  # evaluate every epoch, stop after 5 epochs without validation-loss improvement
+  seed: 42

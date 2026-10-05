@@ -35,7 +35,7 @@ esm150/
 
 ### 3. Download PatchET model weights
 
-Download the [PatchET model weights](https://doi.org/10.5281/zenodo.18408368) and place the checkpoint files into the `checkpoint/` folder. Each task has its own subfolder containing a model config and weights file:
+Download the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) and place the checkpoint files into the `checkpoint/` folder. Each task has its own subfolder containing a model config and weights file:
 
 ```
 checkpoint/

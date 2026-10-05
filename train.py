@@ -1,9 +1,13 @@
 import os
 import argparse
-from transformers import TrainingArguments
+from transformers import TrainingArguments, EarlyStoppingCallback
+from transformers.trainer_utils import get_last_checkpoint
 from model_trainer import ModelTrainer
 import numpy as np
-import wandb
+try:
+    import wandb
+except ImportError:  # wandb is optional; per-epoch metrics are also written to results/<task>/<model>/log_history.json
+    wandb = None
 from models import load_model
 from dataset_temperature import load_dataset
 from torch.optim import AdamW
@@ -25,11 +29,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train model")
     parser.add_argument('--run_config', type=str, help='Path to the YAML config file')
     parser.add_argument('--model_config', type=str, help='Path to the YAML config file')
+    parser.add_argument('--resume', action='store_true', help='Resume from the last checkpoint in the output directory')
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_args()
+    cli_args = args
     run_config = load_config(args.run_config)
 
     task = run_config['data_path'].split('/')[-1]
@@ -85,7 +91,8 @@ if __name__ == '__main__':
     print(f'trainable parameters: {round(count_parameters(model) / 1000000, 2)}M')
     optimizer = AdamW(filter(lambda p: p.requires_grad, model.parameters()), lr=float(run_config['training']['lr']))
 
-    wandb.init(project='Thermal parameter prediction')
+    if wandb is not None:
+        wandb.init(project='Thermal parameter prediction')
 
 
 
@@ -94,8 +101,9 @@ if __name__ == '__main__':
     #     load_weight(model, f'output/{ver}/opt/segment_dgsa2_s2/checkpoint-3168/model.safetensors')
 
 
-    wandb.run.name = run_name
-    print(f'wandb run name: {run_name}')
+    if wandb is not None:
+        wandb.run.name = run_name
+    print(f'run name: {run_name}')
 
     train_batch_size = run_config['training']['train_batch_size']
     steps_per_epoch = len(dataset_train) // train_batch_size
@@ -103,31 +111,42 @@ if __name__ == '__main__':
     eval_steps = steps_per_epoch * eval_every_n_epochs
     save_limit = 48 / eval_every_n_epochs
 
+    # Early stopping: set `early_stopping_patience` in the run config. The model is then evaluated and saved every epoch, the best
+    # checkpoint is selected on validation loss, and training stops after `patience` epochs without improvement (the best and the
+    # latest checkpoint are kept). Without the key the original schedule (evaluate and save every 8 epochs) is used.
+    patience = run_config['training'].get('early_stopping_patience')
+    seed = run_config['training'].get('seed', 42)
+    if patience is not None:
+        schedule_kwargs = dict(logging_strategy='epoch', save_strategy='epoch', eval_strategy='epoch', save_total_limit=2,
+                               metric_for_best_model='eval_loss', greater_is_better=False)
+        callbacks = [EarlyStoppingCallback(early_stopping_patience=int(patience))]
+    else:
+        schedule_kwargs = dict(logging_strategy='steps', save_strategy='steps', save_steps=eval_steps, eval_strategy='steps',
+                               eval_steps=eval_steps, save_total_limit=10)
+        callbacks = None
+
     args = TrainingArguments(
         output_dir=output_dir,
         logging_dir=f'{output_dir}/log',
-        logging_strategy='steps',  # log every few steps
         logging_steps=steps_per_epoch,  # log once per epoch (optional)
-        save_strategy="steps",  # <--- Match here
-        save_steps=eval_steps,
+        **schedule_kwargs,
         learning_rate=float(run_config['training']['lr']),
         per_device_train_batch_size=run_config['training']['train_batch_size'],
         per_device_eval_batch_size=run_config['training']['eval_batch_size'],
         num_train_epochs=run_config['training']['num_epochs'],
         weight_decay=float(run_config['training']['weight_decay']),
-        eval_strategy="steps",
-        eval_steps=eval_steps,
         dataloader_num_workers=run_config['training']['dataloader_num_workers'],
         dataloader_pin_memory=run_config['training']['dataloader_pin_memory'],
-        run_name=wandb.run.name,
+        run_name=run_name,
         overwrite_output_dir=True,
         # save_total_limit=run_config['training']['save_total_limit'],
-        save_total_limit=10,
         remove_unused_columns=False,
-        report_to=["wandb"],
+        report_to=["wandb"] if wandb is not None else [],
         fp16=run_config['training']['fp16'],
         max_grad_norm=run_config['training']['max_grad_norm'],
         load_best_model_at_end=True,
+        seed=seed,
+        data_seed=seed,
     )
 
     trainer = ModelTrainer(
@@ -139,9 +158,16 @@ if __name__ == '__main__':
         test_dataset=dataset_test,
         data_collator=collate_fn,
         compute_metrics=metrics,
+        callbacks=callbacks,
     )
 
-    trainer.train(resume_from_checkpoint=False)
+    last_ckpt = get_last_checkpoint(output_dir) if cli_args.resume else None
+    print(f'resume from: {last_ckpt}')
+    trainer.train(resume_from_checkpoint=last_ckpt if last_ckpt else False)
+    write_json(trainer.state.log_history, f'{results_dir}/log_history.json')
+    write_json({'best_model_checkpoint': trainer.state.best_model_checkpoint, 'best_metric': trainer.state.best_metric,
+                'epochs_run': trainer.state.epoch, 'max_epochs': run_config['training']['num_epochs']},
+               f'{results_dir}/training_summary.json')
 
 
 
@@ -176,4 +202,5 @@ if __name__ == '__main__':
                 write_json(metrics_interval, f'{results_dir}/{k}_metrics_interval.json')
                 plot_interval_evaluation(metrics_interval, save_dir=f'{results_dir}')
 
-    wandb.finish()
+    if wandb is not None:
+        wandb.finish()

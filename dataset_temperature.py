@@ -46,7 +46,7 @@ class DatasetOpt(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data.loc[idx, ['accession', 'ec', 'label', 'organism', 'sequence', 'ogt']]
+        return self.data.loc[idx, ['accession', 'ec', 'label', 'organism', 'sequence']]
         # return self.data.loc[idx, ['accession', 'ec', 'organism', 'sequence']]
 
 
@@ -85,7 +85,7 @@ class DatasetStability(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return self.data.loc[idx, ['accession', 'ec', 'label', 'organism', 'sequence', 'ogt']]
+        return self.data.loc[idx, ['accession', 'ec', 'label', 'organism', 'sequence']]
 
 
 class DatasetRange(Dataset):
