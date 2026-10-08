@@ -20,9 +20,21 @@
 pip install -r requirements.txt
 ```
 
-### 2. Download ESM-2 weights
+### 2. Model weights (downloaded automatically)
 
-Download the [ESM-2 (esm2_t30_150M_UR50D)](https://huggingface.co/facebook/esm2_t30_150M_UR50D) pretrained weights and place all files in the `esm150/` folder so that the directory looks like this:
+`inference.py` downloads any missing weights the first time it runs, so no manual step is needed:
+
+- the [ESM-2 (esm2_t30_150M_UR50D)](https://huggingface.co/facebook/esm2_t30_150M_UR50D) backbone from the Hugging Face Hub, into `esm150/`
+- the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) for the requested task(s) from Zenodo, into `checkpoint/<task>/`
+
+Files that are already present are reused. To fetch everything in advance (e.g. before working offline), run:
+
+```bash
+python download.py                # ESM-2 + all three task checkpoints
+python download.py --tasks opt    # ESM-2 + the opt checkpoint only
+```
+
+After downloading, the folders look like this (you can also place the files there yourself):
 
 ```
 esm150/
@@ -31,13 +43,7 @@ esm150/
 ├── special_tokens_map.json
 ├── tokenizer_config.json
 └── vocab.txt
-```
 
-### 3. Download PatchET model weights
-
-Download the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) and place the checkpoint files into the `checkpoint/` folder. Each task has its own subfolder containing a model config and weights file:
-
-```
 checkpoint/
 ├── opt/
 │   ├── model_config.yaml
@@ -87,7 +93,7 @@ Example FASTA files for each task are provided in the `examples/` directory.
 ### Basic usage
 
 ```bash
-python inference.py --fasta <input.fasta> [--tasks TASK ...] [--output OUTPUT] [--batch_size N] [--device DEVICE]
+python inference.py --fasta <input.fasta> [--tasks TASK ...] [--output OUTPUT] [--batch_size N] [--device DEVICE] [--no_download]
 ```
 
 | Argument | Description | Default |
@@ -97,6 +103,10 @@ python inference.py --fasta <input.fasta> [--tasks TASK ...] [--output OUTPUT] [
 | `--output` | Path to the output CSV file | `predictions.csv` |
 | `--batch_size` | Batch size for inference | `16` |
 | `--device` | Device to use: `auto`, `cpu`, `cuda` | `auto` |
+| `--checkpoint_dir` | Folder holding the task checkpoints (one subfolder per task) | `checkpoint/` |
+| `--esm_dir` | Folder holding the ESM-2 backbone | `esm150/` |
+| `--zenodo_record` | Zenodo record the task checkpoints are downloaded from | `23160814` |
+| `--no_download` | Fail instead of downloading missing weights | off |
 
 ### Predict Temperature Optimum
 

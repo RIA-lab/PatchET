@@ -5,6 +5,9 @@ Predicts three thermal properties for protein sequences from a FASTA file:
   - Stability: thermostability threshold  (checkpoint/stability/)
   - Range  : [T_low, T_high] active range (checkpoint/range/)
 
+Missing weights (the ESM-2 backbone in esm150/ and the task checkpoints in
+checkpoint/) are downloaded automatically on first use.
+
 Usage:
     python inference.py --fasta proteins.fasta --output predictions.csv
 """
@@ -20,6 +23,8 @@ import torch
 from tqdm import tqdm
 from transformers import EsmTokenizer
 
+from download import (DEFAULT_CHECKPOINT_DIR, DEFAULT_ESM_DIR, ZENODO_RECORD_ID,
+                      ensure_checkpoints, ensure_esm, task_checkpoint_paths)
 from models import load_model
 from utils import load_config, load_weight, read_fasta, replace_noncanonical
 
@@ -28,15 +33,9 @@ from utils import load_config, load_weight, read_fasta, replace_noncanonical
 # Task definitions
 # ─────────────────────────────────────────────────────────────
 TASKS = {
-    "opt":       {"config": "checkpoint/opt/model_config.yaml",
-                  "weights": "checkpoint/opt/model.safetensors",
-                  "output_cols": ["topt"]},
-    "stability": {"config": "checkpoint/stability/model_config.yaml",
-                  "weights": "checkpoint/stability/model.safetensors",
-                  "output_cols": ["t_stability"]},
-    "range":     {"config": "checkpoint/range/model_config.yaml",
-                  "weights": "checkpoint/range/model.safetensors",
-                  "output_cols": ["t_low", "t_high"]},
+    "opt":       {"output_cols": ["topt"]},
+    "stability": {"output_cols": ["t_stability"]},
+    "range":     {"output_cols": ["t_low", "t_high"]},
 }
 
 
@@ -68,6 +67,22 @@ def parse_args() -> argparse.Namespace:
         "--device", type=str, default="auto",
         choices=["auto", "cpu", "cuda"],
         help="Inference device (default: auto)."
+    )
+    parser.add_argument(
+        "--checkpoint_dir", type=str, default=DEFAULT_CHECKPOINT_DIR,
+        help="Folder holding the task checkpoints, one subfolder per task (default: checkpoint/)."
+    )
+    parser.add_argument(
+        "--esm_dir", type=str, default=DEFAULT_ESM_DIR,
+        help="Folder holding the ESM-2 (esm2_t30_150M_UR50D) backbone (default: esm150/)."
+    )
+    parser.add_argument(
+        "--zenodo_record", type=str, default=ZENODO_RECORD_ID,
+        help=f"Zenodo record to download task checkpoints from (default: {ZENODO_RECORD_ID})."
+    )
+    parser.add_argument(
+        "--no_download", action="store_true",
+        help="Do not download missing weights; fail instead."
     )
     return parser.parse_args()
 
@@ -111,11 +126,11 @@ def normalize_sequence(value: object) -> Optional[str]:
     return replace_noncanonical(seq, replace_char="X")
 
 
-def load_task_model(task_name: str, device: torch.device):
+def load_task_model(task_name: str, device: torch.device, checkpoint_dir: str, esm_dir: str):
     """Instantiate the model for a task and load its checkpoint weights."""
-    task_cfg = TASKS[task_name]
-    config_path  = task_cfg["config"]
-    weights_path = task_cfg["weights"]
+    paths = task_checkpoint_paths(task_name, checkpoint_dir)
+    config_path  = paths["config"]
+    weights_path = paths["weights"]
 
     for path, label in [(config_path, "config"), (weights_path, "weights")]:
         if not os.path.exists(path):
@@ -124,6 +139,9 @@ def load_task_model(task_name: str, device: torch.device):
             )
 
     model_config = load_config(config_path)
+    # PatchET is built on ESM-2 150M (640-dim embeddings); point the config at the local
+    # backbone so loading does not depend on the current working directory.
+    model_config["pretrain_model"] = esm_dir
     Model, _ = load_model(model_config["name"])
 
     model = Model(model_config)
@@ -202,6 +220,11 @@ def main() -> None:
     headers, sequences = read_fasta(args.fasta)
     print(f"Loaded {len(sequences)} sequences from {args.fasta}")
 
+    # ── Make sure all weights are available (downloads on first use) ──
+    download = not args.no_download
+    esm_dir = os.path.abspath(ensure_esm(args.esm_dir, download=download))
+    ensure_checkpoints(args.tasks, args.checkpoint_dir, args.zenodo_record, download=download)
+
     # ── Build result DataFrame ───────────────────────────────
     accessions = [parse_uniprot_accession(h) for h in headers]
     df = pd.DataFrame({"accession": accessions, "sequence": sequences})
@@ -209,7 +232,7 @@ def main() -> None:
     # ── Run each requested task ──────────────────────────────
     for task_name in args.tasks:
         print(f"\nRunning task: {task_name}")
-        model, model_config = load_task_model(task_name, device)
+        model, model_config = load_task_model(task_name, device, args.checkpoint_dir, esm_dir)
 
         tokenizer = EsmTokenizer.from_pretrained(model_config["pretrain_model"])
         max_length = int(model_config.get("context_window", 1000))
