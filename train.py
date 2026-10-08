@@ -8,6 +8,7 @@ try:
     import wandb
 except ImportError:  # wandb is optional; per-epoch metrics are also written to results/<task>/<model>/log_history.json
     wandb = None
+from download import DEFAULT_ESM_DIR, ensure_esm
 from models import load_model
 from dataset_temperature import load_dataset
 from torch.optim import AdamW
@@ -71,6 +72,12 @@ if __name__ == '__main__':
     save_config(model_config, f'{output_dir}/model_config.yaml')
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
+
+    # The default backbone `esm150` is the repo's esm150/ folder; download ESM-2 there on first use.
+    # Done after saving the config so the saved model_config.yaml keeps the portable name `esm150`.
+    # Any other value (a local folder or a Hugging Face model id) is passed to from_pretrained as is.
+    if os.path.normpath(model_config['pretrain_model']) == os.path.basename(DEFAULT_ESM_DIR):
+        model_config['pretrain_model'] = ensure_esm(DEFAULT_ESM_DIR)
 
     if 'reda' in model_config['name']:
         model_config['task'] = task

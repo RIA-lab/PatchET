@@ -14,29 +14,43 @@
 
 ## 🔧 Setup
 
-### 1. Install dependencies
+Install the dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Model weights (downloaded automatically)
+---
 
-`inference.py` downloads any missing weights the first time it runs, so no manual step is needed:
+## 🔬 Inference
 
-- the [ESM-2 (esm2_t30_150M_UR50D)](https://huggingface.co/facebook/esm2_t30_150M_UR50D) backbone from the Hugging Face Hub, into `esm150/`
-- the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) for the requested task(s) from Zenodo, into `checkpoint/<task>/`
+Use `inference.py` to predict enzyme temperature properties from a FASTA file.
+Example FASTA files for each task are provided in the `examples/` directory.
 
-The ESM-2 backbone is frozen during training, so the downloaded task checkpoints are trimmed to the PatchET weights only (any ESM-2 `pretrain_model` tensors are removed; the backbone is always loaded from `esm150/`). Checkpoints already in `checkpoint/` are trimmed the same way.
+### Model weights
 
-Files that are already present are reused. To fetch everything in advance (e.g. before working offline), run:
+Inference needs two sets of weights. `inference.py` downloads whichever are missing the first time it runs, so normally there is nothing to do:
+
+- the [ESM-2 (esm2_t30_150M_UR50D)](https://huggingface.co/facebook/esm2_t30_150M_UR50D) backbone, from the Hugging Face Hub into `esm150/`
+- the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) for the requested task(s), from Zenodo into `checkpoint/<task>/`
+
+Files that are already present are reused. The ESM-2 backbone is frozen during training, so the task checkpoints keep only the PatchET weights: any ESM-2 `pretrain_model` tensors are removed, and the backbone is always loaded from `esm150/`.
+
+To fetch everything in advance (e.g. before working offline), run:
 
 ```bash
 python download.py                # ESM-2 + all three task checkpoints
 python download.py --tasks opt    # ESM-2 + the opt checkpoint only
 ```
 
-After downloading, the folders look like this (you can also place the files there yourself):
+#### Manual download (if the automatic download fails)
+
+If your machine cannot reach Hugging Face or Zenodo, download the files elsewhere and copy them into the repository:
+
+1. **ESM-2 backbone:** download `config.json`, `model.safetensors`, `special_tokens_map.json`, `tokenizer_config.json` and `vocab.txt` from [facebook/esm2_t30_150M_UR50D](https://huggingface.co/facebook/esm2_t30_150M_UR50D/tree/main) into `esm150/`.
+2. **PatchET checkpoints:** download `checkpoint.zip` from [Zenodo](https://doi.org/10.5281/zenodo.23160814) and unzip it in the repository root (`unzip checkpoint.zip`), which creates the `checkpoint/` folder.
+
+Either way, the folders should end up like this:
 
 ```
 esm150/
@@ -58,39 +72,7 @@ checkpoint/
     └── model.safetensors
 ```
 
----
-
-## 🏋️ Training
-
-Train the model for each task using the appropriate config file:
-
-**Temperature optimum**
-```bash
-python train.py \
-  --run_config run_configs/opt.yaml \
-  --model_config model_configs/PatchET.yaml
-```
-
-**Temperature stability**
-```bash
-python train.py \
-  --run_config run_configs/stability.yaml \
-  --model_config model_configs/PatchET.yaml
-```
-
-**Temperature range**
-```bash
-python train.py \
-  --run_config run_configs/range.yaml \
-  --model_config model_configs/PatchET_range.yaml
-```
-
----
-
-## 🔬 Inference
-
-Use `inference.py` to predict enzyme temperature properties from a FASTA file.
-Example FASTA files for each task are provided in the `examples/` directory.
+Run `inference.py` with `--no_download` to use only local files and report anything missing instead of downloading it.
 
 ### Basic usage
 
@@ -146,6 +128,35 @@ The output CSV contains the following columns:
 | `t_stability` | Predicted thermostability (if `stability` task is run) |
 | `t_low` | Predicted lower bound of active range (if `range` task is run) |
 | `t_high` | Predicted upper bound of active range (if `range` task is run) |
+
+---
+
+## 🏋️ Training
+
+Training uses the same frozen ESM-2 backbone. `train.py` downloads it into `esm150/` on the first run if it is missing (see [Manual download](#manual-download-if-the-automatic-download-fails) if that fails). The PatchET checkpoints are not needed for training.
+
+Train the model for each task using the appropriate config file:
+
+**Temperature optimum**
+```bash
+python train.py \
+  --run_config run_configs/opt.yaml \
+  --model_config model_configs/PatchET.yaml
+```
+
+**Temperature stability**
+```bash
+python train.py \
+  --run_config run_configs/stability.yaml \
+  --model_config model_configs/PatchET.yaml
+```
+
+**Temperature range**
+```bash
+python train.py \
+  --run_config run_configs/range.yaml \
+  --model_config model_configs/PatchET_range.yaml
+```
 
 ---
 
