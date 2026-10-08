@@ -27,6 +27,8 @@ pip install -r requirements.txt
 - the [ESM-2 (esm2_t30_150M_UR50D)](https://huggingface.co/facebook/esm2_t30_150M_UR50D) backbone from the Hugging Face Hub, into `esm150/`
 - the [PatchET model weights](https://doi.org/10.5281/zenodo.23160814) for the requested task(s) from Zenodo, into `checkpoint/<task>/`
 
+The ESM-2 backbone is frozen during training, so the downloaded task checkpoints are trimmed to the PatchET weights only (any `pretrain_model.*` tensors are removed; the backbone is always loaded from `esm150/`). Checkpoints already in `checkpoint/` are trimmed the same way.
+
 Files that are already present are reused. To fetch everything in advance (e.g. before working offline), run:
 
 ```bash

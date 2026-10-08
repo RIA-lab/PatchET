@@ -3,6 +3,10 @@ Automatic download of the weights PatchET needs at inference time:
   - ESM-2 (esm2_t30_150M_UR50D) backbone files from the Hugging Face Hub -> esm150/
   - PatchET task checkpoints from Zenodo                               -> checkpoint/<task>/
 
+The ESM-2 backbone is frozen during training, yet some released checkpoints also
+contain its weights. Those `pretrain_model.*` tensors are stripped so every
+checkpoint keeps only the PatchET weights; the backbone is always loaded from esm150/.
+
 Files that are already present are never downloaded again. Can also be run
 directly to pre-fetch everything, e.g. before going offline:
 
@@ -15,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import tarfile
 import tempfile
 import urllib.request
@@ -37,6 +42,7 @@ ZENODO_RECORD_ID = "23160814"
 ZENODO_API = "https://zenodo.org/api/records/{record_id}"
 
 TASK_NAMES = ["opt", "stability", "range"]
+BACKBONE_PREFIX = "pretrain_model"   # attribute holding the frozen ESM-2 in models/patchet*.py
 CONFIG_NAME = "model_config.yaml"
 WEIGHTS_NAME = "model.safetensors"
 ARCHIVE_EXTS = (".zip", ".tar", ".tar.gz", ".tgz")
@@ -78,7 +84,19 @@ def _has_checkpoint(task: str, checkpoint_dir: str) -> bool:
 
 def ensure_checkpoints(tasks: List[str], checkpoint_dir: str = DEFAULT_CHECKPOINT_DIR,
                        record_id: str = ZENODO_RECORD_ID, download: bool = True) -> None:
-    """Make sure `checkpoint/<task>/{model_config.yaml, model.safetensors}` exist for every task."""
+    """
+    Make sure `checkpoint/<task>/{model_config.yaml, model.safetensors}` exist for every task,
+    and that the weights hold only PatchET parameters (no frozen ESM-2 backbone).
+    """
+    _fetch_checkpoints(tasks, checkpoint_dir, record_id, download)
+    for task in tasks:
+        weights = task_checkpoint_paths(task, checkpoint_dir)["weights"]
+        removed = strip_backbone_weights(weights)
+        if removed:
+            print(f"  [{task}] removed {removed} frozen ESM-2 tensors from {weights}")
+
+
+def _fetch_checkpoints(tasks: List[str], checkpoint_dir: str, record_id: str, download: bool) -> None:
     missing = [t for t in tasks if not _has_checkpoint(t, checkpoint_dir)]
     if not missing:
         return
@@ -210,6 +228,61 @@ def _install_from_archive(archive: dict, checkpoint_dir: str) -> None:
             print(f"  installed '{task}' checkpoint -> {os.path.dirname(paths['config'])}")
 
 
+def strip_backbone_weights(weights_path: str) -> int:
+    """
+    Remove the frozen ESM-2 tensors (`pretrain_model.*`) from a safetensors file in place,
+    keeping only the PatchET weights. Returns the number of tensors removed (0 = unchanged).
+
+    The file is rewritten at the byte level (header + raw tensor bytes), so this needs
+    neither torch nor enough memory to hold the checkpoint, and preserves dtypes exactly.
+    """
+    try:
+        with open(weights_path, "rb") as f:
+            (header_len,) = struct.unpack("<Q", f.read(8))
+            header = json.loads(f.read(header_len))
+    except (struct.error, ValueError) as e:
+        raise RuntimeError(f"{weights_path} is not a valid safetensors file: {e}") from e
+    data_start = 8 + header_len
+
+    metadata = header.pop("__metadata__", None)
+    keep = {k: v for k, v in header.items() if k.split(".")[0] != BACKBONE_PREFIX}
+    removed = len(header) - len(keep)
+    if removed == 0:
+        return 0
+    if not keep:
+        raise RuntimeError(f"{weights_path} contains only backbone weights; refusing to empty it.")
+
+    # Pack the kept tensors contiguously, in their original order.
+    new_header, offset = {}, 0
+    order = sorted(keep, key=lambda k: keep[k]["data_offsets"][0])
+    for key in order:
+        begin, end = keep[key]["data_offsets"]
+        new_header[key] = {**keep[key], "data_offsets": [offset, offset + end - begin]}
+        offset += end - begin
+    if metadata is not None:
+        new_header["__metadata__"] = metadata
+
+    header_bytes = json.dumps(new_header, separators=(",", ":")).encode("utf-8")
+    header_bytes += b" " * (-len(header_bytes) % 8)   # safetensors pads the header to 8 bytes
+
+    tmp = weights_path + ".part"
+    with open(weights_path, "rb") as src, open(tmp, "wb") as out:
+        out.write(struct.pack("<Q", len(header_bytes)))
+        out.write(header_bytes)
+        for key in order:
+            begin, end = keep[key]["data_offsets"]
+            src.seek(data_start + begin)
+            remaining = end - begin
+            while remaining:
+                chunk = src.read(min(remaining, 1 << 24))
+                if not chunk:
+                    raise RuntimeError(f"{weights_path} is truncated (tensor '{key}').")
+                out.write(chunk)
+                remaining -= len(chunk)
+    os.replace(tmp, weights_path)
+    return removed
+
+
 def _safe_extract(archive_path: str, dest: str) -> None:
     """Extract a zip/tar archive, refusing members that would land outside `dest`."""
     dest = os.path.realpath(dest)
@@ -238,7 +311,8 @@ def _safe_extract(archive_path: str, dest: str) -> None:
 # CLI
 # ─────────────────────────────────────────────────────────────
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download the ESM-2 backbone and PatchET checkpoints.")
+    parser = argparse.ArgumentParser(
+        description="Download the ESM-2 backbone and PatchET checkpoints (stripped to PatchET weights only).")
     parser.add_argument("--tasks", type=str, nargs="+", choices=TASK_NAMES, default=TASK_NAMES,
                         help="Task checkpoints to download (default: all).")
     parser.add_argument("--checkpoint_dir", type=str, default=DEFAULT_CHECKPOINT_DIR,
@@ -251,7 +325,7 @@ def main() -> None:
 
     ensure_esm(args.esm_dir)
     ensure_checkpoints(args.tasks, args.checkpoint_dir, args.zenodo_record)
-    print("All weights are in place.")
+    print("All weights are in place; task checkpoints hold PatchET weights only.")
 
 
 if __name__ == "__main__":
