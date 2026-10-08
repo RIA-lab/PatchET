@@ -4,7 +4,7 @@ Automatic download of the weights PatchET needs at inference time:
   - PatchET task checkpoints from Zenodo                               -> checkpoint/<task>/
 
 The ESM-2 backbone is frozen during training, yet some released checkpoints also
-contain its weights. Those `pretrain_model.*` tensors are stripped so every
+contain its weights. Those `pretrain_model` tensors are stripped so every
 checkpoint keeps only the PatchET weights; the backbone is always loaded from esm150/.
 
 Files that are already present are never downloaded again. Can also be run
@@ -230,8 +230,12 @@ def _install_from_archive(archive: dict, checkpoint_dir: str) -> None:
 
 def strip_backbone_weights(weights_path: str) -> int:
     """
-    Remove the frozen ESM-2 tensors (`pretrain_model.*`) from a safetensors file in place,
-    keeping only the PatchET weights. Returns the number of tensors removed (0 = unchanged).
+    Remove the frozen ESM-2 tensors from a safetensors file in place, keeping only the PatchET
+    weights. These are the tensors under a `pretrain_model` module, at the top level
+    (`pretrain_model.*`) or nested in a wrapper (e.g. `patchet.pretrain_model.*`).
+    Returns the number of tensors removed (0 = unchanged).
+
+    Also checks the file is complete, so a truncated download fails here with a clear message.
 
     The file is rewritten at the byte level (header + raw tensor bytes), so this needs
     neither torch nor enough memory to hold the checkpoint, and preserves dtypes exactly.
@@ -245,7 +249,14 @@ def strip_backbone_weights(weights_path: str) -> int:
     data_start = 8 + header_len
 
     metadata = header.pop("__metadata__", None)
-    keep = {k: v for k, v in header.items() if k.split(".")[0] != BACKBONE_PREFIX}
+    data_len = max((v["data_offsets"][1] for v in header.values()), default=0)
+    if os.path.getsize(weights_path) != data_start + data_len:
+        raise RuntimeError(
+            f"{weights_path} is truncated or corrupt: header expects {data_len} bytes of tensor data, "
+            f"file has {os.path.getsize(weights_path) - data_start}. Delete it and download again."
+        )
+
+    keep = {k: v for k, v in header.items() if BACKBONE_PREFIX not in k.split(".")[:-1]}
     removed = len(header) - len(keep)
     if removed == 0:
         return 0
